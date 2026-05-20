@@ -298,23 +298,44 @@ class PopupApp:
         self.final_win.overrideredirect(True)
         self.final_win.attributes("-topmost", True)
 
-        final_width, final_height = 700, 200
+        final_width, final_height = 720, 240
         fx = (self.screen_width - final_width) // 2
         fy = (self.screen_height - final_height) // 2
         self.final_win.geometry(f"{final_width}x{final_height}+{fx}+{fy}")
-        self.final_win.config(bg="#fff0f5")
+
+        # 外层渐变边框效果：用多层 Frame 模拟
+        border_frame = tk.Frame(self.final_win, bg="#ff69b4", bd=0)
+        border_frame.pack(fill=tk.BOTH, expand=True)
+        inner_border = tk.Frame(border_frame, bg="#ffb6c1", bd=0)
+        inner_border.pack(fill=tk.BOTH, expand=True, padx=3, pady=3)
+        content_frame = tk.Frame(inner_border, bg="#2d1b2e", bd=0)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+        # 顶部装饰爱心
+        deco_label = tk.Label(
+            content_frame, text="💗 · 💕 · 💗", font=("Segoe UI Emoji", 14),
+            fg="#ff69b4", bg="#2d1b2e"
+        )
+        deco_label.pack(pady=(15, 5))
 
         self.typewriter_label1 = tk.Label(
-            self.final_win, text="", font=("微软雅黑", 24, "bold"),
-            fg="#d02090", bg="#fff0f5"
+            content_frame, text="", font=("微软雅黑", 22, "bold"),
+            fg="#ffb6c1", bg="#2d1b2e"
         )
-        self.typewriter_label1.pack(padx=30, pady=(40, 10))
+        self.typewriter_label1.pack(padx=30, pady=(10, 8))
 
         self.typewriter_label2 = tk.Label(
-            self.final_win, text="", font=("微软雅黑", 28, "bold"),
-            fg="#ff1493", bg="#fff0f5"
+            content_frame, text="", font=("微软雅黑", 26, "bold"),
+            fg="#ff69b4", bg="#2d1b2e"
         )
-        self.typewriter_label2.pack(padx=30, pady=(0, 30))
+        self.typewriter_label2.pack(padx=30, pady=(0, 8))
+
+        # 底部装饰线
+        bottom_deco = tk.Label(
+            content_frame, text="━━━━━━━━━━━━━━━━━━━━",
+            font=("微软雅黑", 8), fg="#ff69b4", bg="#2d1b2e"
+        )
+        bottom_deco.pack(pady=(0, 12))
 
         # 打字机文本队列（使用配置中的文本，替换昵称占位符）
         line1 = FINAL_LINE_1
@@ -390,6 +411,7 @@ class PopupApp:
         win = tk.Toplevel(self.root)
         win.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}+{x}+{y}")
         win.attributes("-topmost", True)
+        win.attributes("-alpha", 0.0)  # 初始完全透明
 
         msg = random.choice(MESSAGES)
         color = random.choice(BG_COLORS)
@@ -406,6 +428,23 @@ class PopupApp:
         win.bind("<Button-3>", lambda e: self.destroy_popup(win))
 
         self.all_windows.append(win)
+
+        # 淡入动画
+        self._fade_in(win, 0.0)
+
+    def _fade_in(self, win, alpha):
+        """逐步提升窗口透明度，实现淡入效果"""
+        if alpha >= 1.0:
+            try:
+                win.attributes("-alpha", 1.0)
+            except tk.TclError:
+                pass
+            return
+        try:
+            win.attributes("-alpha", alpha)
+            self.root.after(20, lambda: self._fade_in(win, alpha + 0.3))
+        except tk.TclError:
+            pass
 
     def start_move(self, event):
         win = event.widget if isinstance(event.widget, tk.Toplevel) else event.widget.winfo_toplevel()
