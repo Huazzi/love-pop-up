@@ -43,6 +43,9 @@ class PopupApp:
         target_width = short_side * 0.8
         self.heart_scale = max(target_width / 32, 1.0)
 
+        # 绑定紧急退出快捷键 Ctrl+Shift+Q
+        self.root.bind_all("<Control-Shift-Q>", lambda e: self.emergency_exit())
+
         # 延迟启动动画
         self.root.after(100, self.start_animation)
 
@@ -280,34 +283,59 @@ class PopupApp:
             self.show_final_message()
             
     def show_final_message(self):
-        final_win = tk.Toplevel(self.root)
-        final_win.overrideredirect(True)
-        final_win.attributes("-topmost", True)
-        
-        # 利用浅粉色背景，加上醒目的字体
-        final_win.config(bg="#fff0f5")
-        
-        label = tk.Label(
-            final_win, text="我会陪你很久很久 ❤ 不是我想 ❤ 而是我会", font=("微软雅黑", 24, "bold"),
+        # 创建一个居中的小窗口，无边框，粉色背景
+        self.final_win = tk.Toplevel(self.root)
+        self.final_win.overrideredirect(True)
+        self.final_win.attributes("-topmost", True)
+
+        final_width, final_height = 700, 200
+        fx = (self.screen_width - final_width) // 2
+        fy = (self.screen_height - final_height) // 2
+        self.final_win.geometry(f"{final_width}x{final_height}+{fx}+{fy}")
+        self.final_win.config(bg="#fff0f5")
+
+        self.typewriter_label1 = tk.Label(
+            self.final_win, text="", font=("微软雅黑", 24, "bold"),
             fg="#d02090", bg="#fff0f5"
         )
-        label.pack(padx=30, pady=(20, 10))
-        
-        label_520 = tk.Label(
-            final_win, text="祝亲爱的笨笨520快乐！", font=("微软雅黑", 28, "bold"),
+        self.typewriter_label1.pack(padx=30, pady=(40, 10))
+
+        self.typewriter_label2 = tk.Label(
+            self.final_win, text="", font=("微软雅黑", 28, "bold"),
             fg="#ff1493", bg="#fff0f5"
         )
-        label_520.pack(padx=30, pady=(0, 20))
-        
-        final_win.update_idletasks()
-        w = final_win.winfo_width()
-        h = final_win.winfo_height()
-        x = (self.screen_width - w) // 2
-        y = (self.screen_height - h) // 2
-        final_win.geometry(f"+{x}+{y}")
-        
-        # 停留5秒钟，让对方看清字幕，之后彻底退出程序
-        self.root.after(5000, self.root.quit)
+        self.typewriter_label2.pack(padx=30, pady=(0, 30))
+
+        # 打字机文本队列
+        self.typewriter_lines = [
+            (self.typewriter_label1, "我会陪你很久很久 ❤ 不是我想 ❤ 而是我会"),
+            (self.typewriter_label2, "祝亲爱的笨笨520快乐！"),
+        ]
+        self.typewriter_line_idx = 0
+        self.typewriter_char_idx = 0
+        self._typewriter_step()
+
+    def _typewriter_step(self):
+        """逐字显示文本，一行完成后进入下一行"""
+        if self.typewriter_line_idx >= len(self.typewriter_lines):
+            # 所有文字打完，等待 3 秒后退出
+            self.root.after(3000, self.root.quit)
+            return
+
+        label, full_text = self.typewriter_lines[self.typewriter_line_idx]
+        self.typewriter_char_idx += 1
+        displayed = full_text[:self.typewriter_char_idx]
+        label.config(text=displayed)
+
+        if self.typewriter_char_idx >= len(full_text):
+            # 当前行打完，切换到下一行
+            self.typewriter_line_idx += 1
+            self.typewriter_char_idx = 0
+            # 行间停顿 500ms
+            self.root.after(500, self._typewriter_step)
+        else:
+            # 每个字 100ms
+            self.root.after(100, self._typewriter_step)
 
     def create_popup(self, x, y):
         win = tk.Toplevel(self.root)
@@ -364,6 +392,12 @@ class PopupApp:
             except:
                 pass
         self.all_windows.clear()
+
+    def emergency_exit(self):
+        """紧急退出：销毁所有窗口并退出程序"""
+        self.cleanup()
+        self.root.quit()
+        self.root.destroy()
 
     def run(self):
         self.root.mainloop()
