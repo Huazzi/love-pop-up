@@ -1,29 +1,21 @@
 import tkinter as tk
 import random
 import math
+from config import (
+    NICKNAME, PASSWORDS, MESSAGES, BG_COLORS,
+    FINAL_LINE_1, FINAL_LINE_2, EXIT_DIALOG_HINT,
+    WINDOW_WIDTH, WINDOW_HEIGHT, HEART_STEP, HEART_SPEED, HEART_STAY,
+    RANDOM_COUNT, RANDOM_SPEED,
+    PARTICLE_COUNT, PARTICLE_HEARTS, PARTICLE_COLORS,
+)
 
-# -------------------------- 可自定义参数 --------------------------
-WINDOW_WIDTH = 180
-WINDOW_HEIGHT = 80
-HEART_STEP = 3                # 爱心轮廓步长(度)
-HEART_SPEED = 30              # 爱心弹窗间隔 (毫秒)
-HEART_STAY = 2000             # 爱心停留时间 (毫秒)
-RANDOM_COUNT = 150            # 随机弹窗数量
-RANDOM_SPEED = 25             # 随机弹窗间隔 (毫秒)
-
-MESSAGES = [
-    "好好爱自己", "顺顺利利", "别熬夜", "多喝水哦~",
-    "好好吃饭", "我想你了", "天天开心", "保持好心情",
-    "永远爱你", "你笑起来真好看", "今天也要元气满满",
-    "记得吃早餐", "累了就休息", "你是我的小幸运",
-    "想抱抱你", "晚安好梦", "注意保暖哦", "睡觉香香",
-    "你值得所有美好", "每天都要开心鸭", "我一直都在",
-    "少吃辣多吃菜", "出门记得带伞", "你最棒的",
-    "想你每一天", "做你的开心果", "永远站在你这边",
-    "平安喜乐", "万事顺遂", "烦恼都丢掉",
+# 根据昵称自动生成额外口令
+_AUTO_PASSWORDS = [
+    f"{NICKNAME}亲签",
+    f"本{NICKNAME}收到", f"本{NICKNAME}收到啦",
+    f"本{NICKNAME}知道啦", f"本{NICKNAME}爱你",
 ]
-BG_COLORS = ["#ffb6c1", "#98fb98", "#87cefa", "#fffacd", "#dda0dd"]
-# ----------------------------------------------------------------
+ALL_PASSWORDS = list(set(PASSWORDS + _AUTO_PASSWORDS))
 
 class PopupApp:
     def __init__(self):
@@ -103,13 +95,13 @@ class PopupApp:
 
         # 2. 创建最顶层的无边框退出验证窗口
         exit_win = tk.Toplevel(self.root)
-        exit_win.overrideredirect(True)  # 无标题栏边框
+        exit_win.overrideredirect(True)
         width, height = 340, 180
         x = (self.screen_width - width) // 2
         y = (self.screen_height - height) // 2
         exit_win.geometry(f"{width}x{height}+{x}+{y}")
         exit_win.attributes("-topmost", True)
-        
+
         # 3. UI 样式：使用粉色边框和浅背景
         frame = tk.Frame(exit_win, bg="#dda0dd", bd=4)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -117,8 +109,9 @@ class PopupApp:
         inner_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
         # 提示文本
+        hint_text = EXIT_DIALOG_HINT.replace("{nickname}", NICKNAME)
         lbl = tk.Label(
-            inner_frame, text="520祝福已派送完毕~\n快输入“笨笨亲签”解锁屏幕吧！", 
+            inner_frame, text=hint_text,
             bg="#fff0f5", fg="#d02090", font=("微软雅黑", 12, "bold")
         )
         lbl.pack(pady=20)
@@ -131,9 +124,7 @@ class PopupApp:
         # 4. 校验密码逻辑
         def check_password(event=None):
             pwd = entry.get().strip()
-            # 埋一点小彩蛋，多几个合法口令
-            if pwd in ["笨笨亲签", "亲签", "收到", "收到啦", "知道啦", "爱你", "我爱你", "本笨笨收到", "本笨笨收到啦", "本笨笨知道啦", "本笨笨爱你", "我爱你"]:
-                # 口令正确，触发黑洞吸附动画
+            if pwd in ALL_PASSWORDS:
                 self.trigger_blackhole_animation(exit_win)
             else:
                 lbl.config(text="口令不对哦，再试一次嘛~", fg="red")
@@ -149,18 +140,16 @@ class PopupApp:
 
         # 绑定回车键可以快捷确认
         exit_win.bind("<Return>", check_password)
-        
-        # 禁用常规的强杀(比如快捷键试图关闭时拦截)
+
+        # 禁用常规的强杀
         exit_win.protocol("WM_DELETE_WINDOW", lambda: None)
 
     def trigger_blackhole_animation(self, exit_win):
-        # 首先销毁密码框
         exit_win.destroy()
 
         center_x = self.screen_width // 2
         center_y = self.screen_height // 2
 
-        # 收集所有存活窗口，按距离中心从近到远排序
         items = []
         for win in self.all_windows:
             if not win.winfo_exists():
@@ -170,21 +159,14 @@ class PopupApp:
             dist = math.hypot(x - center_x, y - center_y)
             items.append((win, x, y, dist))
 
-        # 按距离从远到近排序 → 外圈先飞
         items.sort(key=lambda d: -d[3])
 
-        # 分波次：每波 20 个窗口，波间间隔 50ms
-        # 每个窗口只需要知道起点和飞行速度
         self.waves = []
         BATCH_SIZE = 30
-        max_dist = items[0][3] if items else 1
 
         for i, (win, sx, sy, dist) in enumerate(items):
             wave_idx = i // BATCH_SIZE
-            # 飞行速度：像素/帧，距离越远速度越快，保证差不多同时到达
-            # 总帧数控制在 18~25 帧（约 0.3~0.4 秒）
             total_frames = random.randint(6, 10)
-            # 螺旋方向随机
             spin = random.choice([-1, 1]) * random.uniform(0.08, 0.15)
 
             self.waves.append({
@@ -199,26 +181,21 @@ class PopupApp:
                 "started": False,
             })
 
-        self.wave_released = 0  # 当前已释放的波次
+        self.wave_released = 0
         self.bh_center_x = center_x
         self.bh_center_y = center_y
-
-        # 启动波次释放定时器
         self.release_next_wave()
 
     def release_next_wave(self):
-        """释放下一波窗口开始飞行"""
         for data in self.waves:
             if data["wave"] == self.wave_released:
                 data["started"] = True
         self.wave_released += 1
 
-        # 检查是否还有未释放的波次
         has_more = any(not d["started"] for d in self.waves)
         if has_more:
             self.root.after(20, self.release_next_wave)
 
-        # 如果是第一波，启动动画循环
         if self.wave_released == 1:
             self.blackhole_step()
 
@@ -236,28 +213,21 @@ class PopupApp:
             t = data["frame"] / data["total_frames"]
 
             if t >= 1.0:
-                # 到达中心，直接销毁（不改大小，避免闪烁）
                 try:
                     data["win"].destroy()
-                except:
+                except tk.TclError:
                     pass
                 continue
 
-            # ease-in-quad：前慢后快，模拟加速吸入
             ease = t * t
-
-            # 基础直线插值
             nx = data["sx"] + (cx - data["sx"]) * ease
             ny = data["sy"] + (cy - data["sy"]) * ease
 
-            # 叠加轻微螺旋偏移（垂直于飞行方向的正弦摆动，随接近中心衰减）
             remaining_ratio = 1.0 - ease
             offset = math.sin(t * math.pi * 2.5) * data["dist"] * data["spin"] * remaining_ratio
-            # 垂直方向
             dx = cx - data["sx"]
             dy = cy - data["sy"]
             length = data["dist"] if data["dist"] > 0 else 1
-            # 法线方向
             perp_x = -dy / length
             perp_y = dx / length
             nx += offset * perp_x
@@ -267,23 +237,63 @@ class PopupApp:
             win_y = int(ny - WINDOW_HEIGHT // 2)
 
             try:
-                # 只移动位置，不改变窗口大小 → 避免重绘闪烁
                 data["win"].geometry(f"+{win_x}+{win_y}")
                 active.append(data)
-            except:
+            except tk.TclError:
                 pass
 
         self.waves = active
 
         if self.waves:
-            # 30fps 足够流畅，且大幅降低 CPU 压力（相比 16ms/60fps）
             self.root.after(33, self.blackhole_step)
         else:
             self.cleanup()
             self.show_final_message()
-            
+
     def show_final_message(self):
-        # 创建一个居中的小窗口，无边框，粉色背景
+        # ---------- 飘落爱心粒子（每个粒子是一个小透明窗口） ----------
+        self.particle_windows = []
+        self.particle_data = []
+        self.particle_running = True
+
+        for _ in range(PARTICLE_COUNT):
+            x = random.randint(0, self.screen_width - 40)
+            y = random.randint(-self.screen_height, -40)
+            heart = random.choice(PARTICLE_HEARTS)
+            color = random.choice(PARTICLE_COLORS)
+            size = random.randint(14, 32)
+
+            pw = tk.Toplevel(self.root)
+            pw.overrideredirect(True)
+            pw.attributes("-topmost", True)
+            pw.attributes("-alpha", random.uniform(0.6, 0.95))
+            trans_color = "#010101"
+            pw.config(bg=trans_color)
+            pw.attributes("-transparentcolor", trans_color)
+            win_size = size + 24
+            pw.geometry(f"{win_size}x{win_size}+{x}+{y}")
+
+            lbl = tk.Label(pw, text=heart, font=("Segoe UI Emoji", size),
+                           fg=color, bg=trans_color)
+            lbl.place(relx=0.5, rely=0.5, anchor="center")
+
+            self.particle_windows.append(pw)
+            self.particle_data.append({
+                "win": pw,
+                "x": float(x),
+                "y": float(y),
+                "speed_y": random.uniform(1.5, 5.5),
+                "speed_x": random.uniform(-1.2, 1.2),
+                "swing_amp": random.uniform(0.8, 2.5),
+                "swing_freq": random.uniform(0.02, 0.08),
+                "tick": 0,
+            })
+
+        # 分两组交替更新以减少每帧系统调用
+        self._particle_group = 0
+        self._animate_particles()
+
+        # ---------- 打字机文字窗口 ----------
         self.final_win = tk.Toplevel(self.root)
         self.final_win.overrideredirect(True)
         self.final_win.attributes("-topmost", True)
@@ -306,20 +316,48 @@ class PopupApp:
         )
         self.typewriter_label2.pack(padx=30, pady=(0, 30))
 
-        # 打字机文本队列
+        # 打字机文本队列（使用配置中的文本，替换昵称占位符）
+        line1 = FINAL_LINE_1
+        line2 = FINAL_LINE_2.replace("{nickname}", NICKNAME)
         self.typewriter_lines = [
-            (self.typewriter_label1, "我会陪你很久很久 ❤ 不是我想 ❤ 而是我会"),
-            (self.typewriter_label2, "祝亲爱的笨笨520快乐！"),
+            (self.typewriter_label1, line1),
+            (self.typewriter_label2, line2),
         ]
         self.typewriter_line_idx = 0
         self.typewriter_char_idx = 0
         self._typewriter_step()
 
+    def _animate_particles(self):
+        """每帧移动一半粒子窗口，两组交替更新，降低单帧开销"""
+        if not self.particle_running:
+            return
+
+        group = self._particle_group
+        self._particle_group = 1 - group
+
+        for i, p in enumerate(self.particle_data):
+            p["tick"] += 1
+            p["y"] += p["speed_y"]
+            swing = p["swing_amp"] * math.sin(p["tick"] * p["swing_freq"])
+            p["x"] += p["speed_x"] + swing * 0.3
+
+            if p["y"] > self.screen_height + 40:
+                p["y"] = random.uniform(-80, -40)
+                p["x"] = random.randint(0, self.screen_width - 40)
+                p["tick"] = 0
+
+            if i % 2 == group:
+                try:
+                    p["win"].geometry(f"+{int(p['x'])}+{int(p['y'])}")
+                except tk.TclError:
+                    pass
+
+        self.root.after(25, self._animate_particles)
+
     def _typewriter_step(self):
         """逐字显示文本，一行完成后进入下一行"""
         if self.typewriter_line_idx >= len(self.typewriter_lines):
-            # 所有文字打完，等待 3 秒后退出
-            self.root.after(3000, self.root.quit)
+            self.root.after(5000, self._final_exit)
             return
 
         label, full_text = self.typewriter_lines[self.typewriter_line_idx]
@@ -328,14 +366,25 @@ class PopupApp:
         label.config(text=displayed)
 
         if self.typewriter_char_idx >= len(full_text):
-            # 当前行打完，切换到下一行
             self.typewriter_line_idx += 1
             self.typewriter_char_idx = 0
-            # 行间停顿 500ms
             self.root.after(500, self._typewriter_step)
         else:
-            # 每个字 100ms
             self.root.after(100, self._typewriter_step)
+
+    def _final_exit(self):
+        """停止粒子动画，销毁所有窗口，退出程序"""
+        self.particle_running = False
+        for pw in self.particle_windows:
+            try:
+                pw.destroy()
+            except tk.TclError:
+                pass
+        try:
+            self.final_win.destroy()
+        except tk.TclError:
+            pass
+        self.root.quit()
 
     def create_popup(self, x, y):
         win = tk.Toplevel(self.root)
@@ -350,13 +399,10 @@ class PopupApp:
         )
         label.pack(fill=tk.BOTH, expand=True)
 
-        # 左键拖动
         label.bind("<Button-1>", self.start_move)
         label.bind("<B1-Motion>", self.on_move)
         win.bind("<Button-1>", self.start_move)
         win.bind("<B1-Motion>", self.on_move)
-
-        # 右键关闭
         win.bind("<Button-3>", lambda e: self.destroy_popup(win))
 
         self.all_windows.append(win)
@@ -379,7 +425,7 @@ class PopupApp:
             if win in self.all_windows:
                 self.all_windows.remove(win)
             win.destroy()
-        except:
+        except tk.TclError:
             pass
 
     def cleanup(self):
@@ -389,7 +435,7 @@ class PopupApp:
         for win in self.all_windows[:]:
             try:
                 win.destroy()
-            except:
+            except tk.TclError:
                 pass
         self.all_windows.clear()
 
