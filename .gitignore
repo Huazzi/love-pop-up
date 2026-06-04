@@ -12,7 +12,6 @@ env/
 # PyInstaller
 build/
 dist/
-*.spec
 
 # IDE
 .vscode/
@@ -29,3 +28,8 @@ Desktop.ini
 # Misc
 *.log
 *.tmp
+
+# 其他
+task_plan.md
+progress.md
+findings.md

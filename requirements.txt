@@ -1,0 +1,8 @@
+# Runtime dependencies
+#
+# This project uses only Python's standard library at runtime.
+# Tkinter is bundled with most Python installers on Windows/macOS.
+#
+# On some Linux distributions, install Tkinter with your system package manager,
+# for example:
+#   sudo apt install python3-tk
