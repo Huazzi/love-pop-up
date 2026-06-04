@@ -6,11 +6,16 @@
 
 ## ✨ 效果流程
 
-1. **爱心弹窗** — 屏幕上按心形轮廓依次弹出彩色祝福弹窗，带淡入效果
-2. **随机炸屏** — 150 个弹窗随机铺满全屏，满屏都是爱
-3. **口令解锁** — 弹出密码框，输入正确口令才能解锁屏幕
-4. **黑洞吸附** — 所有弹窗以螺旋路径飞向屏幕中心并消失
-5. **最终告白** — 飘落爱心粒子 + 打字机效果逐字显示告白文字
+1. **开场预热** — 居中显示专属来信、心跳爱心和短倒计时
+2. **分幕祝福** — 按照照顾、想念、夸奖、承诺等章节推进弹窗文案
+3. **爱心弹窗** — 屏幕上按心形轮廓依次弹出彩色祝福弹窗，带淡入效果
+4. **随机炸屏** — 150 个弹窗随机铺满全屏，满屏都是爱
+5. **轻互动选择** — 选择当前心情，后续签收提示和回执会带上这个选择
+6. **回忆碎片** — 自动展示几张文字回忆卡片，作为签收前的小桥段
+7. **口令签收** — 弹出甜蜜签收单，输入正确口令后出现“已签收”盖章动画
+8. **黑洞转场** — 所有弹窗以螺旋路径飞向屏幕中心，随后出现扩散爆发转场
+9. **最终告白** — 飘落爱心粒子 + 打字机效果逐字显示告白文字
+10. **留存回执** — 最后显示一张可配置的永久签收回执页，并按配置自动退出
 
 ## 🚀 运行方式
 
@@ -44,10 +49,16 @@ python main.py
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --noconsole main.py config.py
+pyinstaller main.spec
 ```
 
 打包后的可执行文件在 `dist/` 目录下，可以直接发给对方双击运行。
+
+如果不使用 `main.spec`，需要手动把字体资源加入打包命令：
+
+```powershell
+pyinstaller --onefile --noconsole --add-data "assets/fonts/LXGWBright-Regular.ttf;assets/fonts" main.py
+```
 
 ## 🎨 自定义配置
 
@@ -63,6 +74,22 @@ pyinstaller --onefile --noconsole main.py config.py
 | `FINAL_LINE_1` | 最终告白第一行 | `"我会陪你很久很久 ❤"` |
 | `FINAL_LINE_2` | 最终告白第二行（支持 `{nickname}` 占位符） | `"祝亲爱的{nickname}520快乐！"` |
 | `EXIT_DIALOG_HINT` | 密码框提示文字（支持 `{nickname}` 占位符） | 见 config.py |
+
+### 剧情内容配置
+
+这些配置决定“表白小剧场”每个环节展示什么内容：
+
+| 配置项 | 说明 |
+|--------|------|
+| `OPENING_LINES` | 开场预热逐段显示的短句，支持 `{nickname}` 占位符 |
+| `BLESSING_CHAPTERS` | 分幕式祝福配置，每一幕包含 `title`、`subtitle` 和 `messages` |
+| `INTERACTION_CHOICES` | 轻互动按钮配置，每个选项包含 `label` 和选择后的 `reply` |
+| `MEMORY_CARDS` | 回忆碎片卡片列表，每张卡可配置 `date`、`title`、`text`、`icon` |
+| `STAMP_SIGNOFF_STYLE["text"]` | 正确口令后的盖章文字 |
+| `TRANSITION_BURST_STYLE["caption"]` | 黑洞吸收完成后的爆发转场提示 |
+| `KEEPSAKE_RECEIPT` | 最终留存回执内容，包括寄件人、收件人、有效期、编号、条目和结尾文案 |
+
+`BLESSING_CHAPTERS` 为空时会自动退回到旧的 `MESSAGES` 随机祝福模式。`MEMORY_CARDS` 为空或关闭时，会跳过回忆碎片环节并继续进入签收单。
 
 ### 动画参数
 
@@ -94,11 +121,34 @@ pyinstaller --onefile --noconsole main.py config.py
 | `THEME_NAME` | 当前主题名称 |
 | `THEME_COLORS` | 全局主题色板 |
 | `TEXT_COLORS` | 文字颜色配置 |
+| `OPENING_SCENE_STYLE` | 开场预热窗口样式和时长 |
+| `CHAPTER_TOAST_STYLE` | 分幕标题提示条样式 |
+| `INTERACTION_CHOICE_STYLE` | 心情选择窗口样式 |
+| `MEMORY_CARD_STYLE` | 回忆碎片卡片窗口样式 |
 | `POPUP_CARD_STYLE` | 弹窗卡片样式，例如边框、标题条、装饰符号 |
 | `EXIT_DIALOG_STYLE` | 口令签收框样式，例如尺寸、按钮色、错误晃动参数 |
+| `STAMP_SIGNOFF_STYLE` | “已签收”盖章动画样式 |
 | `BLACKHOLE_STYLE` | 黑洞吸附中心视觉样式 |
+| `TRANSITION_BURST_STYLE` | 黑洞后扩散爆发转场样式 |
 | `FINAL_SCENE_STYLE` | 最终告白场景样式，例如尺寸、背景色、打字机光标 |
-| `FONT_SIZES` | 弹窗、口令框、最终告白的字体大小 |
+| `KEEPSAKE_RECEIPT_STYLE` | 最终留存回执页样式、延迟和停留时长 |
+| `FONT_SIZES` | 各阶段窗口、按钮、卡片和告白文字的字体大小 |
+
+### 最终留存回执
+
+最终告白文字打完后，程序会等待 `KEEPSAKE_RECEIPT_STYLE["delay_after_typewriter"]` 毫秒，再切换到留存回执页。回执页展示完成后，会在 `KEEPSAKE_RECEIPT_STYLE["display_duration"]` 毫秒后自动退出。
+
+常用字段：
+
+| 配置项 | 说明 |
+|--------|------|
+| `KEEPSAKE_RECEIPT["sender"]` | 寄件人 |
+| `KEEPSAKE_RECEIPT["recipient"]` | 收件人，支持 `{nickname}` |
+| `KEEPSAKE_RECEIPT["validity"]` | 回执有效期 |
+| `KEEPSAKE_RECEIPT["serial"]` | 回执编号，支持 `{nickname}` |
+| `KEEPSAKE_RECEIPT["items"]` | 回执详情条目，支持 `{nickname}` 和 `{choice}` |
+| `KEEPSAKE_RECEIPT["closing_lines"]` | 回执页底部的留存文案 |
+| `KEEPSAKE_RECEIPT_STYLE["display_duration"]` | 回执页显示时长 |
 
 ### 黑洞吸附参数
 

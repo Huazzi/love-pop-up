@@ -1,14 +1,45 @@
-import tkinter as tk
+import ctypes
+import os
 import random
 import math
+import sys
+
+APP_FONT_FILE = os.path.join("assets", "fonts", "LXGWBright-Regular.ttf")
+FR_PRIVATE = 0x10
+
+
+def resource_path(relative_path):
+    base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
+
+
+def load_private_font(relative_path):
+    if sys.platform != "win32":
+        return False
+
+    font_path = resource_path(relative_path)
+    if not os.path.exists(font_path):
+        return False
+
+    return ctypes.windll.gdi32.AddFontResourceExW(font_path, FR_PRIVATE, 0) > 0
+
+
+load_private_font(APP_FONT_FILE)
+
+import tkinter as tk
 from config import (
-    NICKNAME, PASSWORDS, MESSAGES, BG_COLORS,
+    NICKNAME, PASSWORDS, MESSAGES, BG_COLORS, BLESSING_CHAPTERS,
+    INTERACTION_CHOICES, MEMORY_CARDS,
     FINAL_LINE_1, FINAL_LINE_2, EXIT_DIALOG_HINT,
     WINDOW_WIDTH, WINDOW_HEIGHT, HEART_STEP, HEART_SPEED, HEART_STAY,
     RANDOM_COUNT, RANDOM_SPEED,
     PARTICLE_COUNT, PARTICLE_HEARTS, PARTICLE_COLORS,
     FONT_FAMILY, EMOJI_FONT_FAMILY, POPUP_CARD_STYLE, FONT_SIZES,
     EXIT_DIALOG_STYLE, BLACKHOLE_STYLE, FINAL_SCENE_STYLE, SPACING,
+    OPENING_LINES, OPENING_SCENE_STYLE, CHAPTER_TOAST_STYLE,
+    INTERACTION_CHOICE_STYLE, MEMORY_CARD_STYLE,
+    STAMP_SIGNOFF_STYLE, TRANSITION_BURST_STYLE,
+    KEEPSAKE_RECEIPT, KEEPSAKE_RECEIPT_STYLE,
 )
 
 # 根据昵称自动生成额外口令
@@ -32,6 +63,38 @@ class PopupApp:
         self.blackhole_canvas = None
         self.blackhole_running = False
         self.blackhole_pulse = 0
+        self.opening_win = None
+        self.opening_canvas = None
+        self.opening_running = False
+        self.opening_tick = 0
+        self.blessing_chapters = []
+        self.popup_flow_index = 0
+        self.popup_flow_total = 1
+        self.active_chapter_idx = None
+        self.chapter_toast_win = None
+        self.chapter_toast_after_id = None
+        self.interaction_choice = None
+        self.interaction_reply = ""
+        self.interaction_win = None
+        self.memory_cards = []
+        self.memory_idx = 0
+        self.memory_win = None
+        self.memory_canvas = None
+        self.memory_after_id = None
+        self.stamp_win = None
+        self.stamp_canvas = None
+        self.stamp_after_id = None
+        self.stamp_running = False
+        self.transition_burst_win = None
+        self.transition_burst_canvas = None
+        self.transition_burst_after_id = None
+        self.final_win = None
+        self.particle_windows = []
+        self.particle_data = []
+        self.particle_running = False
+        self.typewriter_cursor_running = False
+        self.keepsake_win = None
+        self.keepsake_after_id = None
 
         self.screen_width = self.root.winfo_screenwidth()
         self.screen_height = self.root.winfo_screenheight()
@@ -45,13 +108,332 @@ class PopupApp:
         self.root.bind_all("<Control-Shift-Q>", lambda e: self.emergency_exit())
 
         # 延迟启动动画
-        self.root.after(100, self.start_animation)
+        self.root.after(100, self.show_opening_scene)
+
+    def show_opening_scene(self):
+        style = OPENING_SCENE_STYLE
+        if not style.get("enabled", True):
+            self.start_animation()
+            return
+
+        width, height = style["width"], style["height"]
+        x = (self.screen_width - width) // 2
+        y = (self.screen_height - height) // 2
+
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+        win.attributes("-topmost", True)
+        win.attributes("-alpha", 0.0)
+        win.config(bg=style["outer_bg"])
+        win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
+
+        canvas = tk.Canvas(
+            win,
+            width=width,
+            height=height,
+            bg=style["outer_bg"],
+            bd=0,
+            highlightthickness=0,
+        )
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.opening_win = win
+        self.opening_canvas = canvas
+        self.opening_running = True
+        self.opening_tick = 0
+        self.opening_lines = [
+            line.replace("{nickname}", NICKNAME) for line in OPENING_LINES
+        ] or [f"给亲爱的{NICKNAME}"]
+        self._animate_opening_scene()
+
+    def _animate_opening_scene(self):
+        if (
+            not self.opening_running
+            or self.opening_win is None
+            or self.opening_canvas is None
+        ):
+            return
+
+        style = OPENING_SCENE_STYLE
+        frame_interval = style["frame_interval"]
+        total_ticks = max(1, style["duration"] // frame_interval)
+        progress = min(1.0, self.opening_tick / total_ticks)
+
+        if progress >= 1.0:
+            self._finish_opening_scene()
+            return
+
+        canvas = self.opening_canvas
+        width, height = style["width"], style["height"]
+        canvas.delete("all")
+
+        alpha = min(style["max_alpha"], style["max_alpha"] * (self.opening_tick / 8))
+        if progress > 0.86:
+            alpha *= max(0.0, 1 - (progress - 0.86) / 0.14)
+        try:
+            self.opening_win.attributes("-alpha", alpha)
+        except tk.TclError:
+            return
+
+        self._draw_round_rect(
+            canvas,
+            4,
+            4,
+            width - 4,
+            height - 4,
+            22,
+            fill=style["outer_bg"],
+            outline="",
+        )
+        self._draw_round_rect(
+            canvas,
+            10,
+            10,
+            width - 10,
+            height - 10,
+            18,
+            fill=style["middle_bg"],
+            outline="",
+        )
+        self._draw_round_rect(
+            canvas,
+            16,
+            16,
+            width - 16,
+            height - 16,
+            16,
+            fill=style["content_bg"],
+            outline="",
+        )
+        canvas.create_oval(
+            -60,
+            -70,
+            170,
+            150,
+            fill=style["content_bg_alt"],
+            outline="",
+        )
+        canvas.create_oval(
+            width - 145,
+            height - 125,
+            width + 58,
+            height + 58,
+            fill=style["content_bg_alt"],
+            outline="",
+        )
+
+        for i, dot_x in enumerate(range(60, width - 40, 86)):
+            dot_y = 52 + (i % 2) * 10
+            canvas.create_oval(
+                dot_x,
+                dot_y,
+                dot_x + 4,
+                dot_y + 4,
+                fill=style["decor_fg"],
+                outline="",
+            )
+
+        pulse = math.sin(self.opening_tick * 0.35)
+        heart_size = int(38 + pulse * 5)
+        canvas.create_text(
+            width / 2,
+            68,
+            text=style["heart"],
+            font=(EMOJI_FONT_FAMILY, heart_size),
+            fill=style["heart_fg"],
+        )
+        canvas.create_text(
+            width / 2,
+            106,
+            text=style["eyebrow"],
+            font=(FONT_FAMILY, FONT_SIZES["opening_eyebrow"], "bold"),
+            fill=style["muted_fg"],
+        )
+
+        line_count = max(1, len(self.opening_lines))
+        line_idx = min(line_count - 1, int(progress * line_count))
+        canvas.create_text(
+            width / 2,
+            145,
+            text=self.opening_lines[line_idx],
+            font=(FONT_FAMILY, FONT_SIZES["opening_title"], "bold"),
+            fill=style["title_fg"],
+            width=width - 72,
+            justify="center",
+        )
+
+        countdown = style["countdown_from"] - int(
+            progress * style["countdown_from"]
+        )
+        countdown_text = str(max(1, countdown)) if progress < 0.82 else "♡"
+        canvas.create_text(
+            width / 2,
+            196,
+            text=countdown_text,
+            font=(FONT_FAMILY, FONT_SIZES["opening_countdown"], "bold"),
+            fill=style["heart_fg"],
+        )
+        canvas.create_text(
+            width / 2,
+            228,
+            text="这一刻，先留给你",
+            font=(FONT_FAMILY, FONT_SIZES["opening_body"]),
+            fill=style["body_fg"],
+        )
+
+        self.opening_tick += 1
+        self.after_id = self.root.after(frame_interval, self._animate_opening_scene)
+
+    def _finish_opening_scene(self):
+        self.opening_running = False
+        self.after_id = None
+        self._destroy_opening_scene()
+        self.start_animation()
+
+    def _destroy_opening_scene(self):
+        self.opening_running = False
+        if self.opening_win is not None:
+            try:
+                self.opening_win.destroy()
+            except tk.TclError:
+                pass
+        self.opening_win = None
+        self.opening_canvas = None
 
     def start_animation(self):
         self.cleanup()
         self.heart_points = self.generate_heart_points()
         self.current_step = 0
+        self._prepare_blessing_flow()
         self.spawn_heart_step()
+
+    def _prepare_blessing_flow(self):
+        self.blessing_chapters = [
+            chapter for chapter in BLESSING_CHAPTERS
+            if chapter.get("messages")
+        ]
+        self.popup_flow_index = 0
+        self.popup_flow_total = max(1, len(self.heart_points) + RANDOM_COUNT)
+        self.active_chapter_idx = None
+
+    def _select_popup_message(self):
+        if not self.blessing_chapters:
+            return random.choice(MESSAGES) if MESSAGES else "爱你"
+
+        chapter_idx = min(
+            len(self.blessing_chapters) - 1,
+            int(self.popup_flow_index * len(self.blessing_chapters) / self.popup_flow_total),
+        )
+        chapter = self.blessing_chapters[chapter_idx]
+
+        if chapter_idx != self.active_chapter_idx:
+            self.active_chapter_idx = chapter_idx
+            self._show_chapter_toast(chapter, chapter_idx)
+
+        self.popup_flow_index += 1
+        messages = chapter.get("messages") or MESSAGES
+        return random.choice(messages) if messages else "爱你"
+
+    def _show_chapter_toast(self, chapter, chapter_idx):
+        style = CHAPTER_TOAST_STYLE
+        if not style.get("enabled", True):
+            return
+
+        self._destroy_chapter_toast()
+
+        width, height = style["width"], style["height"]
+        x = (self.screen_width - width) // 2
+        y = style["top_offset"]
+
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+        win.attributes("-topmost", True)
+        win.attributes("-alpha", style["alpha"])
+        win.config(bg=style["outer_bg"])
+
+        canvas = tk.Canvas(
+            win,
+            width=width,
+            height=height,
+            bg=style["outer_bg"],
+            bd=0,
+            highlightthickness=0,
+        )
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        self._draw_round_rect(
+            canvas,
+            4,
+            4,
+            width - 4,
+            height - 4,
+            18,
+            fill=style["middle_bg"],
+            outline="",
+        )
+        self._draw_round_rect(
+            canvas,
+            9,
+            9,
+            width - 9,
+            height - 9,
+            14,
+            fill=style["content_bg"],
+            outline="",
+        )
+        canvas.create_text(
+            34,
+            height / 2,
+            text=style["icon"],
+            font=(EMOJI_FONT_FAMILY, 22),
+            fill=style["title_fg"],
+        )
+        canvas.create_text(
+            68,
+            30,
+            text=chapter.get("title", f"第{chapter_idx + 1}幕"),
+            anchor="w",
+            font=(FONT_FAMILY, FONT_SIZES["chapter_title"], "bold"),
+            fill=style["title_fg"],
+        )
+        canvas.create_text(
+            68,
+            58,
+            text=chapter.get("subtitle", ""),
+            anchor="w",
+            font=(FONT_FAMILY, FONT_SIZES["chapter_subtitle"]),
+            fill=style["subtitle_fg"],
+            width=width - 118,
+        )
+        canvas.create_text(
+            width - 38,
+            height / 2,
+            text=f"{chapter_idx + 1:02d}",
+            font=(FONT_FAMILY, 14, "bold"),
+            fill=style["muted_fg"],
+        )
+
+        self.chapter_toast_win = win
+        self.chapter_toast_after_id = self.root.after(
+            style["duration"],
+            self._destroy_chapter_toast,
+        )
+
+    def _destroy_chapter_toast(self):
+        if self.chapter_toast_after_id is not None:
+            try:
+                self.root.after_cancel(self.chapter_toast_after_id)
+            except tk.TclError:
+                pass
+            self.chapter_toast_after_id = None
+        if self.chapter_toast_win is not None:
+            try:
+                self.chapter_toast_win.destroy()
+            except tk.TclError:
+                pass
+        self.chapter_toast_win = None
 
     def generate_heart_points(self):
         points = []
@@ -91,8 +473,321 @@ class PopupApp:
             self.random_step_count += 1
             self.after_id = self.root.after(RANDOM_SPEED, self.spawn_random_step)
         else:
-            # 满屏弹窗结束后，延迟 1 秒出现退出确认框
-            self.after_id = self.root.after(1000, self.show_exit_dialog)
+            # 满屏弹窗结束后，先给对方一个轻互动选择
+            self.after_id = self.root.after(1000, self.show_interaction_choice)
+
+    def show_interaction_choice(self):
+        self.after_id = None
+        style = INTERACTION_CHOICE_STYLE
+        choices = [choice for choice in INTERACTION_CHOICES if choice.get("label")]
+        if not style.get("enabled", True) or not choices:
+            self.show_memory_cards()
+            return
+
+        self._destroy_interaction_choice()
+
+        width, height = style["width"], style["height"]
+        x = (self.screen_width - width) // 2
+        y = (self.screen_height - height) // 2
+
+        choice_win = tk.Toplevel(self.root)
+        choice_win.overrideredirect(True)
+        choice_win.geometry(f"{width}x{height}+{x}+{y}")
+        choice_win.attributes("-topmost", True)
+        choice_win.config(bg=style["outer_bg"])
+        choice_win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
+        choice_win.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        outer_frame = tk.Frame(choice_win, bg=style["outer_bg"], bd=0)
+        outer_frame.pack(fill=tk.BOTH, expand=True)
+        middle_frame = tk.Frame(outer_frame, bg=style["middle_bg"], bd=0)
+        middle_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        inner_frame = tk.Frame(middle_frame, bg=style["content_bg"], bd=0)
+        inner_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+        header_frame = tk.Frame(inner_frame, bg=style["content_bg"], bd=0)
+        header_frame.pack(fill=tk.X, padx=SPACING["lg"], pady=(SPACING["lg"], 0))
+        icon_label = tk.Label(
+            header_frame,
+            text=style["icon"],
+            bg=style["content_bg"],
+            fg=style["title_fg"],
+            font=(EMOJI_FONT_FAMILY, 26),
+        )
+        icon_label.pack(side=tk.LEFT)
+
+        title_box = tk.Frame(header_frame, bg=style["content_bg"], bd=0)
+        title_box.pack(side=tk.LEFT, padx=(SPACING["sm"], 0), fill=tk.X, expand=True)
+        title_label = tk.Label(
+            title_box,
+            text=style["title"],
+            bg=style["content_bg"],
+            fg=style["title_fg"],
+            font=(FONT_FAMILY, FONT_SIZES["choice_title"], "bold"),
+            anchor="w",
+        )
+        title_label.pack(fill=tk.X)
+        subtitle_label = tk.Label(
+            title_box,
+            text=style["subtitle"],
+            bg=style["content_bg"],
+            fg=style["body_fg"],
+            font=(FONT_FAMILY, FONT_SIZES["choice_body"]),
+            anchor="w",
+            wraplength=style["width"] - 110,
+        )
+        subtitle_label.pack(fill=tk.X, pady=(2, 0))
+
+        separator = tk.Frame(inner_frame, bg=style["middle_bg"], height=1)
+        separator.pack(fill=tk.X, padx=SPACING["lg"], pady=SPACING["md"])
+
+        button_frame = tk.Frame(inner_frame, bg=style["content_bg"], bd=0)
+        button_frame.pack(fill=tk.X, padx=SPACING["xl"])
+
+        def choose(choice):
+            self.interaction_choice = choice.get("label", "")
+            self.interaction_reply = choice.get("reply", "")
+            self._destroy_interaction_choice()
+            self.after_id = self.root.after(180, self.show_memory_cards)
+
+        for idx, choice in enumerate(choices[:3]):
+            button_bg = (
+                style["button_bg"] if idx == 0 else style["button_alt_bg"]
+            )
+            btn = tk.Button(
+                button_frame,
+                text=choice["label"],
+                font=(FONT_FAMILY, FONT_SIZES["choice_button"], "bold"),
+                bg=button_bg,
+                fg=style["button_fg"],
+                activebackground=style["button_active_bg"],
+                activeforeground=style["button_fg"],
+                relief=tk.FLAT,
+                bd=0,
+                cursor="hand2",
+                command=lambda data=choice: choose(data),
+            )
+            btn.pack(fill=tk.X, pady=(0, SPACING["sm"]), ipady=5)
+
+        footer_label = tk.Label(
+            inner_frame,
+            text=style["footer"],
+            bg=style["content_bg"],
+            fg=style["muted_fg"],
+            font=(FONT_FAMILY, 9),
+            wraplength=style["width"] - 72,
+        )
+        footer_label.pack(pady=(SPACING["xs"], SPACING["sm"]))
+
+        choice_win.bind("<Return>", lambda e: choose(choices[0]))
+        self.interaction_win = choice_win
+        try:
+            choice_win.lift()
+        except tk.TclError:
+            pass
+
+    def _destroy_interaction_choice(self):
+        if self.interaction_win is not None:
+            try:
+                self.interaction_win.destroy()
+            except tk.TclError:
+                pass
+        self.interaction_win = None
+
+    def show_memory_cards(self):
+        self.after_id = None
+        style = MEMORY_CARD_STYLE
+        cards = [card for card in MEMORY_CARDS if card.get("title") or card.get("text")]
+        if not style.get("enabled", True) or not cards:
+            self.show_exit_dialog()
+            return
+
+        self._destroy_memory_cards()
+        self.memory_cards = cards[:5]
+        self.memory_idx = 0
+
+        width, height = style["width"], style["height"]
+        x = (self.screen_width - width) // 2
+        y = (self.screen_height - height) // 2
+
+        memory_win = tk.Toplevel(self.root)
+        memory_win.overrideredirect(True)
+        memory_win.geometry(f"{width}x{height}+{x}+{y}")
+        memory_win.attributes("-topmost", True)
+        memory_win.config(bg=style["outer_bg"])
+        memory_win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
+        memory_win.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        canvas = tk.Canvas(
+            memory_win,
+            width=width,
+            height=height,
+            bg=style["outer_bg"],
+            bd=0,
+            highlightthickness=0,
+        )
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.memory_win = memory_win
+        self.memory_canvas = canvas
+        self._render_memory_card()
+
+    def _render_memory_card(self):
+        if self.memory_canvas is None or self.memory_win is None:
+            return
+
+        if self.memory_idx >= len(self.memory_cards):
+            self._destroy_memory_cards()
+            self.show_exit_dialog()
+            return
+
+        style = MEMORY_CARD_STYLE
+        card = self.memory_cards[self.memory_idx]
+        canvas = self.memory_canvas
+        width, height = style["width"], style["height"]
+        canvas.delete("all")
+
+        self._draw_round_rect(
+            canvas,
+            4,
+            4,
+            width - 4,
+            height - 4,
+            24,
+            fill=style["outer_bg"],
+            outline="",
+        )
+        self._draw_round_rect(
+            canvas,
+            11,
+            11,
+            width - 11,
+            height - 11,
+            20,
+            fill=style["middle_bg"],
+            outline="",
+        )
+        self._draw_round_rect(
+            canvas,
+            18,
+            18,
+            width - 18,
+            height - 18,
+            17,
+            fill=style["content_bg"],
+            outline="",
+        )
+        canvas.create_oval(
+            -56,
+            -64,
+            180,
+            156,
+            fill=style["content_bg_alt"],
+            outline="",
+        )
+        canvas.create_oval(
+            width - 170,
+            height - 140,
+            width + 64,
+            height + 70,
+            fill=style["content_bg_alt"],
+            outline="",
+        )
+
+        canvas.create_text(
+            42,
+            42,
+            text=style["eyebrow"],
+            anchor="w",
+            font=(FONT_FAMILY, FONT_SIZES["memory_eyebrow"], "bold"),
+            fill=style["muted_fg"],
+        )
+        canvas.create_text(
+            width - 44,
+            45,
+            text=f"{self.memory_idx + 1}/{len(self.memory_cards)}",
+            anchor="e",
+            font=(FONT_FAMILY, FONT_SIZES["memory_date"], "bold"),
+            fill=style["muted_fg"],
+        )
+        canvas.create_line(
+            42,
+            68,
+            width - 42,
+            68,
+            fill=style["middle_bg"],
+            width=1,
+        )
+
+        canvas.create_text(
+            68,
+            112,
+            text=card.get("icon", "💗"),
+            font=(EMOJI_FONT_FAMILY, 34),
+            fill=style["icon_fg"],
+        )
+        canvas.create_text(
+            112,
+            96,
+            text=card.get("date", ""),
+            anchor="w",
+            font=(FONT_FAMILY, FONT_SIZES["memory_date"], "bold"),
+            fill=style["muted_fg"],
+        )
+        canvas.create_text(
+            112,
+            130,
+            text=card.get("title", ""),
+            anchor="w",
+            font=(FONT_FAMILY, FONT_SIZES["memory_title"], "bold"),
+            fill=style["title_fg"],
+            width=width - 154,
+        )
+        canvas.create_text(
+            width / 2,
+            194,
+            text=card.get("text", ""),
+            font=(FONT_FAMILY, FONT_SIZES["memory_body"], "bold"),
+            fill=style["body_fg"],
+            width=width - 92,
+            justify="center",
+        )
+        canvas.create_line(
+            132,
+            height - 50,
+            width - 132,
+            height - 50,
+            fill=style["decor_fg"],
+            width=1,
+        )
+        canvas.create_text(
+            width / 2,
+            height - 30,
+            text=style["footer"],
+            font=(FONT_FAMILY, FONT_SIZES["memory_footer"]),
+            fill=style["muted_fg"],
+        )
+
+        self.memory_idx += 1
+        self.memory_after_id = self.root.after(
+            style["card_duration"],
+            self._render_memory_card,
+        )
+
+    def _destroy_memory_cards(self):
+        if self.memory_after_id is not None:
+            try:
+                self.root.after_cancel(self.memory_after_id)
+            except tk.TclError:
+                pass
+            self.memory_after_id = None
+        if self.memory_win is not None:
+            try:
+                self.memory_win.destroy()
+            except tk.TclError:
+                pass
+        self.memory_win = None
+        self.memory_canvas = None
 
     def _shake_window(self, win, base_x, base_y, step=0):
         style = EXIT_DIALOG_STYLE
@@ -116,11 +811,9 @@ class PopupApp:
             pass
 
     def show_exit_dialog(self):
-        # 1. 将之前炸屏的无用窗口取消置顶，避免挡住最核心的密码框
-        for popup_win in self.all_windows:
-            popup_win.attributes("-topmost", False)
+        self.after_id = None
 
-        # 2. 创建最顶层的无边框退出验证窗口
+        # 1. 创建最顶层的无边框退出验证窗口
         style = EXIT_DIALOG_STYLE
         exit_win = tk.Toplevel(self.root)
         exit_win.overrideredirect(True)
@@ -131,7 +824,7 @@ class PopupApp:
         exit_win.attributes("-topmost", True)
         exit_win.config(bg=style["outer_bg"])
 
-        # 3. UI 样式：签收礼盒/回执卡
+        # 2. UI 样式：签收礼盒/回执卡
         outer_frame = tk.Frame(exit_win, bg=style["outer_bg"], bd=0)
         outer_frame.pack(fill=tk.BOTH, expand=True)
         middle_frame = tk.Frame(outer_frame, bg=style["middle_bg"], bd=0)
@@ -188,6 +881,8 @@ class PopupApp:
 
         # 提示文本
         hint_text = EXIT_DIALOG_HINT.replace("{nickname}", NICKNAME)
+        if self.interaction_reply:
+            hint_text = f"{self.interaction_reply}\n{hint_text}"
         lbl = tk.Label(
             inner_frame,
             text=hint_text,
@@ -195,6 +890,7 @@ class PopupApp:
             fg=style["hint_fg"],
             font=(FONT_FAMILY, FONT_SIZES["dialog_hint"], "bold"),
             justify="center",
+            wraplength=width - 72,
         )
         lbl.pack(fill=tk.X, padx=SPACING["lg"], pady=(0, SPACING["sm"]))
 
@@ -216,10 +912,14 @@ class PopupApp:
 
         # 4. 校验密码逻辑
         def check_password(event=None):
+            if self.stamp_running:
+                return
             pwd = entry.get().strip()
             if pwd in ALL_PASSWORDS:
                 btn.config(text="签收成功", bg=style["button_active_bg"])
-                self.trigger_blackhole_animation(exit_win)
+                entry.config(state=tk.DISABLED)
+                btn.config(state=tk.DISABLED, cursor="arrow")
+                self.show_stamp_signoff(exit_win)
             else:
                 lbl.config(text="口令不对哦，再试一次嘛~", fg=style["error_fg"])
                 entry.delete(0, tk.END)
@@ -256,6 +956,139 @@ class PopupApp:
 
         # 禁用常规的强杀
         exit_win.protocol("WM_DELETE_WINDOW", lambda: None)
+        try:
+            exit_win.lift()
+        except tk.TclError:
+            pass
+
+    def show_stamp_signoff(self, exit_win):
+        style = STAMP_SIGNOFF_STYLE
+        if not style.get("enabled", True):
+            self.trigger_blackhole_animation(exit_win)
+            return
+
+        self._destroy_stamp_signoff()
+        self.stamp_running = True
+
+        width, height = style["width"], style["height"]
+        try:
+            base_x = exit_win.winfo_x() + (exit_win.winfo_width() - width) // 2
+            base_y = exit_win.winfo_y() + (exit_win.winfo_height() - height) // 2
+        except tk.TclError:
+            self.trigger_blackhole_animation(exit_win)
+            return
+
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.geometry(f"{width}x{height}+{base_x}+{base_y}")
+        win.attributes("-topmost", True)
+        win.attributes("-alpha", style["alpha"])
+        trans_color = style["transparent_bg"]
+        win.config(bg=trans_color)
+        try:
+            win.attributes("-transparentcolor", trans_color)
+        except tk.TclError:
+            pass
+        win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
+
+        canvas = tk.Canvas(
+            win,
+            width=width,
+            height=height,
+            bg=trans_color,
+            bd=0,
+            highlightthickness=0,
+        )
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.stamp_win = win
+        self.stamp_canvas = canvas
+        self._animate_stamp_signoff(exit_win, 0)
+
+    def _animate_stamp_signoff(self, exit_win, frame):
+        if self.stamp_canvas is None or self.stamp_win is None:
+            return
+
+        style = STAMP_SIGNOFF_STYLE
+        total = max(1, style["duration_frames"])
+        if frame >= total:
+            self._destroy_stamp_signoff()
+            self.trigger_blackhole_animation(exit_win)
+            return
+
+        canvas = self.stamp_canvas
+        width, height = style["width"], style["height"]
+        canvas.delete("all")
+
+        progress = frame / total
+        drop = max(0.0, 1.0 - progress * 2.2)
+        pulse = math.sin(progress * math.pi * 3)
+        cx = width / 2
+        cy = height / 2 + drop * 34
+        scale = 0.72 + min(1.0, progress * 2.0) * 0.28 + pulse * 0.035
+        rx = 78 * scale
+        ry = 42 * scale
+
+        canvas.create_oval(
+            cx - rx,
+            cy - ry,
+            cx + rx,
+            cy + ry,
+            fill=style["stamp_bg"],
+            outline=style["ring"],
+            width=4,
+        )
+        canvas.create_oval(
+            cx - rx + 10,
+            cy - ry + 8,
+            cx + rx - 10,
+            cy + ry - 8,
+            outline=style["ring_alt"],
+            width=2,
+        )
+        canvas.create_line(
+            cx - rx + 22,
+            cy,
+            cx + rx - 22,
+            cy,
+            fill=style["ring"],
+            width=2,
+        )
+        canvas.create_text(
+            cx,
+            cy - 9,
+            text=style["text"],
+            font=(FONT_FAMILY, FONT_SIZES["stamp_text"], "bold"),
+            fill=style["stamp_fg"],
+        )
+        canvas.create_text(
+            cx,
+            cy + 27,
+            text=style["caption"],
+            font=(FONT_FAMILY, FONT_SIZES["stamp_caption"], "bold"),
+            fill=style["stamp_fg"],
+        )
+
+        self.stamp_after_id = self.root.after(
+            style["frame_interval"],
+            lambda: self._animate_stamp_signoff(exit_win, frame + 1),
+        )
+
+    def _destroy_stamp_signoff(self):
+        self.stamp_running = False
+        if self.stamp_after_id is not None:
+            try:
+                self.root.after_cancel(self.stamp_after_id)
+            except tk.TclError:
+                pass
+            self.stamp_after_id = None
+        if self.stamp_win is not None:
+            try:
+                self.stamp_win.destroy()
+            except tk.TclError:
+                pass
+        self.stamp_win = None
+        self.stamp_canvas = None
 
     def _show_blackhole_center(self, center_x, center_y):
         self._destroy_blackhole_center()
@@ -511,7 +1344,131 @@ class PopupApp:
             self.root.after(BLACKHOLE_STYLE["frame_interval"], self.blackhole_step)
         else:
             self.cleanup()
+            self.show_transition_burst()
+
+    def show_transition_burst(self):
+        style = TRANSITION_BURST_STYLE
+        if not style.get("enabled", True):
             self.show_final_message()
+            return
+
+        self._destroy_transition_burst()
+
+        size = style["size"]
+        x = (self.screen_width - size) // 2
+        y = (self.screen_height - size) // 2
+        trans_color = style["transparent_bg"]
+
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.geometry(f"{size}x{size}+{x}+{y}")
+        win.attributes("-topmost", True)
+        win.attributes("-alpha", style["alpha"])
+        win.config(bg=trans_color)
+        try:
+            win.attributes("-transparentcolor", trans_color)
+        except tk.TclError:
+            pass
+        win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
+
+        canvas = tk.Canvas(
+            win,
+            width=size,
+            height=size,
+            bg=trans_color,
+            bd=0,
+            highlightthickness=0,
+        )
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.transition_burst_win = win
+        self.transition_burst_canvas = canvas
+        self._animate_transition_burst(0)
+
+    def _animate_transition_burst(self, frame):
+        if self.transition_burst_canvas is None or self.transition_burst_win is None:
+            return
+
+        style = TRANSITION_BURST_STYLE
+        total = max(1, style["duration_frames"])
+        if frame >= total:
+            self._destroy_transition_burst()
+            self.show_final_message()
+            return
+
+        size = style["size"]
+        canvas = self.transition_burst_canvas
+        canvas.delete("all")
+
+        progress = frame / total
+        cx = size / 2
+        cy = size / 2
+        fade = max(0.0, 1.0 - progress)
+
+        for i, base_radius in enumerate((34, 62, 92)):
+            radius = base_radius + progress * (76 + i * 26)
+            color = style["ring"] if i % 2 == 0 else style["ring_alt"]
+            width = max(1, int(5 * fade) + 1)
+            canvas.create_oval(
+                cx - radius,
+                cy - radius,
+                cx + radius,
+                cy + radius,
+                outline=color,
+                width=width,
+            )
+
+        spark_colors = style["spark_colors"] or [style["ring"]]
+        for i in range(18):
+            angle = i * math.pi * 2 / 18 + progress * 1.4
+            distance = 22 + progress * (96 + (i % 3) * 18)
+            spark_x = cx + math.cos(angle) * distance
+            spark_y = cy + math.sin(angle) * distance
+            spark_size = max(2, int((7 - (i % 3)) * fade) + 1)
+            canvas.create_oval(
+                spark_x - spark_size,
+                spark_y - spark_size,
+                spark_x + spark_size,
+                spark_y + spark_size,
+                fill=spark_colors[i % len(spark_colors)],
+                outline="",
+            )
+
+        heart_size = FONT_SIZES["burst_heart"] + int(math.sin(progress * math.pi) * 8)
+        canvas.create_text(
+            cx,
+            cy - 10,
+            text=style["heart"],
+            font=(EMOJI_FONT_FAMILY, heart_size),
+            fill=style["ring"],
+        )
+        canvas.create_text(
+            cx,
+            cy + 44,
+            text=style["caption"],
+            font=(FONT_FAMILY, FONT_SIZES["burst_caption"], "bold"),
+            fill=style["caption_fg"],
+        )
+
+        self.transition_burst_after_id = self.root.after(
+            style["frame_interval"],
+            lambda: self._animate_transition_burst(frame + 1),
+        )
+
+    def _destroy_transition_burst(self):
+        if self.transition_burst_after_id is not None:
+            try:
+                self.root.after_cancel(self.transition_burst_after_id)
+            except tk.TclError:
+                pass
+            self.transition_burst_after_id = None
+        if self.transition_burst_win is not None:
+            try:
+                self.transition_burst_win.destroy()
+            except tk.TclError:
+                pass
+        self.transition_burst_win = None
+        self.transition_burst_canvas = None
 
     def show_final_message(self):
         # ---------- 飘落爱心粒子（每个粒子是一个小透明窗口） ----------
@@ -769,7 +1726,17 @@ class PopupApp:
         if self.typewriter_line_idx >= len(self.typewriter_lines):
             self.typewriter_cursor_running = False
             self._render_typewriter_lines()
-            self.root.after(5000, self._final_exit)
+            if (
+                KEEPSAKE_RECEIPT.get("enabled", True)
+                and KEEPSAKE_RECEIPT_STYLE.get("enabled", True)
+            ):
+                delay = KEEPSAKE_RECEIPT_STYLE["delay_after_typewriter"]
+                self.keepsake_after_id = self.root.after(
+                    delay,
+                    self.show_keepsake_receipt,
+                )
+            else:
+                self.keepsake_after_id = self.root.after(5000, self._final_exit)
             return
 
         label, full_text = self.typewriter_lines[self.typewriter_line_idx]
@@ -787,8 +1754,213 @@ class PopupApp:
         else:
             self.root.after(100, self._typewriter_step)
 
-    def _final_exit(self):
-        """停止粒子动画，销毁所有窗口，退出程序"""
+    def _receipt_text(self, value):
+        choice_text = self.interaction_choice or "每一种都很想你"
+        return (
+            str(value)
+            .replace("{nickname}", NICKNAME)
+            .replace("{choice}", choice_text)
+        )
+
+    def show_keepsake_receipt(self):
+        if not (
+            KEEPSAKE_RECEIPT.get("enabled", True)
+            and KEEPSAKE_RECEIPT_STYLE.get("enabled", True)
+        ):
+            self._final_exit()
+            return
+
+        self.keepsake_after_id = None
+        self._destroy_final_message()
+        self._destroy_keepsake_receipt()
+
+        style = KEEPSAKE_RECEIPT_STYLE
+        content = KEEPSAKE_RECEIPT
+        width, height = style["width"], style["height"]
+        x = (self.screen_width - width) // 2
+        y = (self.screen_height - height) // 2
+
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+        win.attributes("-topmost", True)
+        win.attributes("-alpha", style["alpha"])
+        win.config(bg=style["outer_bg"])
+        win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
+        win.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        canvas = tk.Canvas(
+            win,
+            width=width,
+            height=height,
+            bg=style["outer_bg"],
+            bd=0,
+            highlightthickness=0,
+        )
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.keepsake_win = win
+        self._draw_keepsake_receipt(canvas, width, height)
+        try:
+            win.lift()
+        except tk.TclError:
+            pass
+
+        self.keepsake_after_id = self.root.after(
+            style["display_duration"],
+            self._final_exit,
+        )
+
+    def _draw_keepsake_receipt(self, canvas, width, height):
+        style = KEEPSAKE_RECEIPT_STYLE
+        content = KEEPSAKE_RECEIPT
+
+        self._draw_round_rect(
+            canvas, 4, 4, width - 4, height - 4, 24,
+            fill=style["outer_bg"], outline="",
+        )
+        self._draw_round_rect(
+            canvas, 12, 12, width - 12, height - 12, 20,
+            fill=style["middle_bg"], outline="",
+        )
+        self._draw_round_rect(
+            canvas, 22, 22, width - 22, height - 22, 17,
+            fill=style["content_bg"], outline="",
+        )
+        canvas.create_oval(
+            -70, -72, 190, 164,
+            fill=style["content_bg_alt"], outline="",
+        )
+        canvas.create_oval(
+            width - 188, height - 146, width + 70, height + 74,
+            fill=style["content_bg_alt"], outline="",
+        )
+
+        canvas.create_text(
+            54, 58,
+            text=style["icon"],
+            font=(EMOJI_FONT_FAMILY, 28),
+            fill=style["stamp_fg"],
+        )
+        canvas.create_text(
+            92, 48,
+            text=self._receipt_text(content["title"]),
+            anchor="w",
+            font=(FONT_FAMILY, FONT_SIZES["receipt_title"], "bold"),
+            fill=style["title_fg"],
+        )
+        canvas.create_text(
+            92, 76,
+            text=self._receipt_text(content["subtitle"]),
+            anchor="w",
+            font=(FONT_FAMILY, FONT_SIZES["receipt_subtitle"], "bold"),
+            fill=style["body_fg"],
+        )
+        canvas.create_text(
+            width - 52, 54,
+            text=self._receipt_text(content["serial"]),
+            anchor="e",
+            font=(FONT_FAMILY, FONT_SIZES["receipt_meta"], "bold"),
+            fill=style["muted_fg"],
+        )
+        canvas.create_line(
+            50, 102, width - 50, 102,
+            fill=style["decor_fg"], width=1,
+        )
+
+        meta_lines = [
+            ("寄件人", self._receipt_text(content["sender"])),
+            ("收件人", self._receipt_text(content["recipient"])),
+            ("回执效力", self._receipt_text(content["validity"])),
+        ]
+        for idx, (label, value) in enumerate(meta_lines):
+            y = 132 + idx * 30
+            canvas.create_text(
+                68, y,
+                text=label,
+                anchor="w",
+                font=(FONT_FAMILY, FONT_SIZES["receipt_meta"], "bold"),
+                fill=style["muted_fg"],
+            )
+            canvas.create_text(
+                138, y,
+                text=value,
+                anchor="w",
+                font=(FONT_FAMILY, FONT_SIZES["receipt_item"], "bold"),
+                fill=style["body_fg"],
+                width=width - 250,
+            )
+
+        stamp_x, stamp_y = width - 126, 160
+        canvas.create_oval(
+            stamp_x - 74, stamp_y - 45,
+            stamp_x + 74, stamp_y + 45,
+            outline=style["stamp_fg"],
+            width=4,
+        )
+        canvas.create_oval(
+            stamp_x - 60, stamp_y - 34,
+            stamp_x + 60, stamp_y + 34,
+            outline=style["decor_fg"],
+            width=2,
+        )
+        canvas.create_text(
+            stamp_x, stamp_y,
+            text=style["stamp_text"],
+            font=(FONT_FAMILY, FONT_SIZES["receipt_stamp"], "bold"),
+            fill=style["stamp_fg"],
+        )
+
+        item_top = 232
+        item_left = 68
+        item_right = width - 68
+        self._draw_round_rect(
+            canvas, item_left, item_top, item_right, item_top + 92, 12,
+            fill="#fff7fb", outline=style["middle_bg"],
+        )
+        valid_items = [
+            item for item in content.get("items", [])
+            if len(item) >= 2
+        ][:4]
+        for idx, (label, value) in enumerate(valid_items):
+            col = idx % 2
+            row = idx // 2
+            base_x = item_left + 26 + col * ((item_right - item_left) / 2)
+            base_y = item_top + 28 + row * 38
+            canvas.create_text(
+                base_x, base_y,
+                text=self._receipt_text(label),
+                anchor="w",
+                font=(FONT_FAMILY, FONT_SIZES["receipt_meta"], "bold"),
+                fill=style["muted_fg"],
+            )
+            canvas.create_text(
+                base_x + 74, base_y,
+                text=self._receipt_text(value),
+                anchor="w",
+                font=(FONT_FAMILY, FONT_SIZES["receipt_item"], "bold"),
+                fill=style["body_fg"],
+                width=(item_right - item_left) / 2 - 110,
+            )
+
+        closing_lines = content.get("closing_lines", [])
+        for idx, line in enumerate(closing_lines[:2]):
+            canvas.create_text(
+                width / 2, 348 + idx * 24,
+                text=self._receipt_text(line),
+                font=(FONT_FAMILY, FONT_SIZES["receipt_closing"], "bold"),
+                fill=style["title_fg"] if idx == 0 else style["body_fg"],
+                width=width - 100,
+                justify="center",
+            )
+        canvas.create_text(
+            width / 2, height - 30,
+            text=self._receipt_text(content["footer"]),
+            font=(FONT_FAMILY, FONT_SIZES["receipt_footer"], "bold"),
+            fill=style["muted_fg"],
+        )
+
+    def _destroy_final_message(self):
         self.particle_running = False
         self.typewriter_cursor_running = False
         for pw in self.particle_windows:
@@ -796,10 +1968,33 @@ class PopupApp:
                 pw.destroy()
             except tk.TclError:
                 pass
-        try:
-            self.final_win.destroy()
-        except tk.TclError:
-            pass
+        self.particle_windows = []
+        self.particle_data = []
+        if self.final_win is not None:
+            try:
+                self.final_win.destroy()
+            except tk.TclError:
+                pass
+        self.final_win = None
+
+    def _destroy_keepsake_receipt(self):
+        if self.keepsake_after_id is not None:
+            try:
+                self.root.after_cancel(self.keepsake_after_id)
+            except tk.TclError:
+                pass
+            self.keepsake_after_id = None
+        if self.keepsake_win is not None:
+            try:
+                self.keepsake_win.destroy()
+            except tk.TclError:
+                pass
+        self.keepsake_win = None
+
+    def _final_exit(self):
+        """停止粒子动画，销毁所有窗口，退出程序"""
+        self._destroy_final_message()
+        self._destroy_keepsake_receipt()
         self.root.quit()
 
     def _draw_round_rect(self, canvas, x1, y1, x2, y2, radius, **kwargs):
@@ -849,7 +2044,7 @@ class PopupApp:
         except tk.TclError:
             pass
 
-        msg = random.choice(MESSAGES)
+        msg = self._select_popup_message()
         color = random.choice(BG_COLORS)
         style = POPUP_CARD_STYLE
         radius = style["corner_radius"]
@@ -1012,7 +2207,15 @@ class PopupApp:
         if self.after_id:
             self.root.after_cancel(self.after_id)
             self.after_id = None
+        self._destroy_opening_scene()
         self._destroy_blackhole_center()
+        self._destroy_chapter_toast()
+        self._destroy_interaction_choice()
+        self._destroy_memory_cards()
+        self._destroy_stamp_signoff()
+        self._destroy_transition_burst()
+        self._destroy_final_message()
+        self._destroy_keepsake_receipt()
         for win in self.all_windows[:]:
             try:
                 win.destroy()
