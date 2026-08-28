@@ -60,6 +60,31 @@ pyinstaller main.spec
 pyinstaller --onefile --noconsole --add-data "assets/fonts/LXGWBright-Regular.ttf;assets/fonts" main.py
 ```
 
+### 打包为 macOS App
+
+在 macOS 上可以使用项目内置脚本生成可双击打开的 `.app`：
+
+```bash
+./scripts/build_macos_app.sh
+```
+
+脚本会自动完成以下步骤：
+
+- 从 `assets/icon01.png` 生成 `assets/love.icns`
+- 使用 `main_macos.spec` 调用 PyInstaller
+- 生成 `dist/Love Pop-Up.app`
+- 生成便于发送的 `Love Pop-Up.zip`
+
+如果脚本没有执行权限，先运行：
+
+```bash
+chmod +x scripts/build_macos_app.sh
+```
+
+首次构建会通过 `uvx` 临时下载并运行 PyInstaller，不会在项目内创建虚拟环境或锁文件。
+
+未经过 Apple Developer ID 签名和公证的 `.app` 发给别人后，macOS 可能会拦截首次打开。短期测试可以右键选择“打开”；正式分发建议增加签名、公证和 DMG 打包流程。
+
 ## 🎨 自定义配置
 
 所有可自定义内容集中在 `config.py` 中，无需修改 `main.py`：
