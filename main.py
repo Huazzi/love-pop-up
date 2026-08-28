@@ -554,17 +554,13 @@ class PopupApp:
             button_bg = (
                 style["button_bg"] if idx == 0 else style["button_alt_bg"]
             )
-            btn = tk.Button(
+            btn = self._create_colored_button(
                 button_frame,
                 text=choice["label"],
                 font=(FONT_FAMILY, FONT_SIZES["choice_button"], "bold"),
                 bg=button_bg,
                 fg=style["button_fg"],
-                activebackground=style["button_active_bg"],
-                activeforeground=style["button_fg"],
-                relief=tk.FLAT,
-                bd=0,
-                cursor="hand2",
+                active_bg=style["button_active_bg"],
                 command=lambda data=choice: choose(data),
             )
             btn.pack(fill=tk.X, pady=(0, SPACING["sm"]), ipady=5)
@@ -593,6 +589,51 @@ class PopupApp:
             except tk.TclError:
                 pass
         self.interaction_win = None
+
+    def _create_colored_button(self, parent, *, text, font, bg, fg, active_bg, command):
+        """创建不依赖系统原生主题的可点击按钮。"""
+        button = tk.Label(
+            parent,
+            text=text,
+            font=font,
+            bg=bg,
+            fg=fg,
+            bd=0,
+            relief=tk.FLAT,
+            cursor="hand2",
+            takefocus=True,
+        )
+        button._colored_button_enabled = True
+
+        def is_enabled():
+            return button._colored_button_enabled
+
+        def on_enter(event=None):
+            if is_enabled():
+                button.config(bg=active_bg)
+
+        def on_leave(event=None):
+            if is_enabled():
+                button.config(bg=bg)
+
+        def invoke(event=None):
+            if not is_enabled():
+                return "break"
+            button.focus_force()
+            command()
+            return "break"
+
+        button.bind("<Enter>", on_enter)
+        button.bind("<Leave>", on_leave)
+        button.bind("<Button-1>", invoke)
+        button.bind("<Return>", invoke)
+        button.bind("<space>", invoke)
+        return button
+
+    @staticmethod
+    def _set_colored_button_enabled(button, enabled):
+        button._colored_button_enabled = enabled
+        button.config(cursor="hand2" if enabled else "arrow")
 
     def show_memory_cards(self):
         self.after_id = None
@@ -816,7 +857,18 @@ class PopupApp:
         # 1. 创建最顶层的无边框退出验证窗口
         style = EXIT_DIALOG_STYLE
         exit_win = tk.Toplevel(self.root)
-        exit_win.overrideredirect(True)
+        if sys.platform == "darwin":
+            # `overrideredirect(True)` 会使 Aqua 忽略这个窗口的窗口管理，
+            # 从而可能只显示 Entry 光标却拒绝真实键盘输入并发出提示音。
+            # 保留可成为第一响应者的 NSWindow，再移除标题栏即可兼顾外观和输入。
+            try:
+                exit_win.attributes("-class", "nswindow")
+                exit_win.attributes("-stylemask", ())
+            except tk.TclError:
+                # 旧版 Tk 不支持 stylemask 时保留普通窗口装饰，优先保证可输入。
+                pass
+        else:
+            exit_win.overrideredirect(True)
         width, height = style["width"], style["height"]
         x = (self.screen_width - width) // 2
         y = (self.screen_height - height) // 2
@@ -908,7 +960,18 @@ class PopupApp:
             insertbackground=style["title_fg"],
         )
         entry.pack(fill=tk.X, padx=2, pady=2, ipady=5)
-        entry.focus_set()
+
+        def activate_entry():
+            """在无边框窗口映射后获取 macOS 所需的实际键盘焦点。"""
+            try:
+                exit_win.lift()
+                exit_win.focus_force()
+                entry.focus_force()
+            except tk.TclError:
+                pass
+
+        exit_win.after_idle(activate_entry)
+        exit_win.bind("<Button-1>", lambda event: entry.focus_force(), add="+")
 
         # 4. 校验密码逻辑
         def check_password(event=None):
@@ -918,7 +981,7 @@ class PopupApp:
             if pwd in ALL_PASSWORDS:
                 btn.config(text="签收成功", bg=style["button_active_bg"])
                 entry.config(state=tk.DISABLED)
-                btn.config(state=tk.DISABLED, cursor="arrow")
+                self._set_colored_button_enabled(btn, False)
                 self.show_stamp_signoff(exit_win)
             else:
                 lbl.config(text="口令不对哦，再试一次嘛~", fg=style["error_fg"])
@@ -927,17 +990,13 @@ class PopupApp:
 
         action_frame = tk.Frame(inner_frame, bg=style["content_bg"], bd=0)
         action_frame.pack(fill=tk.X, padx=SPACING["xl"])
-        btn = tk.Button(
+        btn = self._create_colored_button(
             action_frame,
             text="确认查收",
             font=(FONT_FAMILY, FONT_SIZES["dialog_button"], "bold"),
             bg=style["button_bg"],
             fg=style["button_fg"],
-            activebackground=style["button_active_bg"],
-            activeforeground=style["button_fg"],
-            relief=tk.FLAT,
-            bd=0,
-            cursor="hand2",
+            active_bg=style["button_active_bg"],
             command=check_password,
         )
         btn.pack(fill=tk.X, ipady=5)
@@ -984,11 +1043,7 @@ class PopupApp:
         win.attributes("-topmost", True)
         win.attributes("-alpha", style["alpha"])
         trans_color = style["transparent_bg"]
-        win.config(bg=trans_color)
-        try:
-            win.attributes("-transparentcolor", trans_color)
-        except tk.TclError:
-            pass
+        trans_color = self._configure_transparent_window(win, trans_color)
         win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
 
         canvas = tk.Canvas(
@@ -1103,11 +1158,7 @@ class PopupApp:
         win.overrideredirect(True)
         win.attributes("-topmost", True)
         win.attributes("-alpha", 0.94)
-        win.config(bg=trans_color)
-        try:
-            win.attributes("-transparentcolor", trans_color)
-        except tk.TclError:
-            pass
+        trans_color = self._configure_transparent_window(win, trans_color)
 
         x = center_x - size // 2
         y = center_y - total_height // 2
@@ -1364,11 +1415,7 @@ class PopupApp:
         win.geometry(f"{size}x{size}+{x}+{y}")
         win.attributes("-topmost", True)
         win.attributes("-alpha", style["alpha"])
-        win.config(bg=trans_color)
-        try:
-            win.attributes("-transparentcolor", trans_color)
-        except tk.TclError:
-            pass
+        trans_color = self._configure_transparent_window(win, trans_color)
         win.bind("<Control-Shift-Q>", lambda e: self.emergency_exit())
 
         canvas = tk.Canvas(
@@ -1488,8 +1535,7 @@ class PopupApp:
             pw.attributes("-topmost", True)
             pw.attributes("-alpha", random.uniform(0.6, 0.95))
             trans_color = "#010101"
-            pw.config(bg=trans_color)
-            pw.attributes("-transparentcolor", trans_color)
+            trans_color = self._configure_transparent_window(pw, trans_color)
             win_size = size + 24
             pw.geometry(f"{win_size}x{win_size}+{x}+{y}")
 
@@ -2015,6 +2061,43 @@ class PopupApp:
         ]
         return canvas.create_polygon(points, smooth=True, splinesteps=14, **kwargs)
 
+    def _configure_transparent_window(self, win, fallback_bg):
+        """配置动画窗口透明背景，并返回子组件应使用的背景色。"""
+        if sys.platform == "darwin":
+            try:
+                transparent_bg = "systemTransparent"
+                win.config(bg=transparent_bg)
+                win.attributes("-transparent", True)
+                # Aqua/Tk 在窗口首次映射前设置透明属性时，Canvas 有时会保留
+                # 不透明的初始底色；映射后重新应用属性会触发正确的合成重绘。
+                win.after_idle(
+                    lambda target=win: PopupApp._refresh_macos_transparency(target)
+                )
+                return transparent_bg
+            except tk.TclError:
+                # 保留不透明降级路径；macOS 没有 -transparentcolor 属性。
+                pass
+
+        win.config(bg=fallback_bg)
+        try:
+            # -transparentcolor 是 Windows 特有属性。
+            win.attributes("-transparentcolor", fallback_bg)
+        except tk.TclError:
+            pass
+        return fallback_bg
+
+    @staticmethod
+    def _refresh_macos_transparency(win):
+        """在 macOS 窗口映射后刷新透明合成。"""
+        try:
+            if not win.winfo_exists():
+                return
+            win.attributes("-transparent", False)
+            win.attributes("-transparent", True)
+            win.geometry(win.geometry())
+        except tk.TclError:
+            pass
+
     def _bind_popup_events(self, win, widget):
         widget.bind("<Button-1>", self.start_move)
         widget.bind("<B1-Motion>", self.on_move)
@@ -2038,11 +2121,7 @@ class PopupApp:
         win.attributes("-topmost", True)
         win.attributes("-alpha", 0.0)  # 初始完全透明
         trans_color = "#010101"
-        win.config(bg=trans_color)
-        try:
-            win.attributes("-transparentcolor", trans_color)
-        except tk.TclError:
-            pass
+        trans_color = self._configure_transparent_window(win, trans_color)
 
         msg = self._select_popup_message()
         color = random.choice(BG_COLORS)
